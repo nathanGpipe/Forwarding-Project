@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <ifaddrs.h>
+#include <netinet/in.h>
 
 int main(){
 	int packet_socket;
@@ -80,8 +81,13 @@ int main(){
 		//is not necessary, since the headers, including all addresses,
 		//need to be in the buffer you are sending)
 
-		
-    
+		unsigned short eth_type = 0;
+		char* temp[2];
+		for(int i = 11; i < 14; i++) {
+			temp[i-12] = buf[i];
+		}
+    	eth_type = ntohs(atoi(temp));
+		printf("eth type: %i", eth_type);
 	}
 	//exit
 	return 0;
