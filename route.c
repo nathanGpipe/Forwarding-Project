@@ -7,6 +7,35 @@
 #include <ifaddrs.h>
 #include <netinet/in.h>
 
+#include <netinet/ip.h>
+
+#define ETH_HW_ADDR_LEN 6
+#define IP_ADDR_LEN     4
+#define ARP_FRAME_TYPE  0x0806
+#define ETHER_HW_TYPE   1
+#define IP_PROTO_TYPE   0x0800
+#define OP_ARP_REQUEST  2
+
+struct arpheader {
+	unsigned short int htype;    /* Hardware Type           */ 
+    unsigned short int ptype;    /* Protocol Type           */ 
+    unsigned char hlen;        /* Hardware Address Length */ 
+    unsigned char plen;        /* Protocol Address Length */ 
+    unsigned short int oper;     /* Op code */
+    unsigned char sha[6];      /* Sender hardware address */ 
+    unsigned char spa[4];      /* Sender IP address       */ 
+    unsigned char tha[6];      /* Target hardware address */ 
+    unsigned char tpa[4];      /* Target IP address       */
+}
+
+struct ipheader {
+	unsigned char ihl_ver[8];
+  	unsigned char ttl;
+  	unsigned char protocol;
+  	unsigned short checksum;
+  	unsigned char src_addr[4];
+  	unsigned char dst_addr[4];
+}
 int main(){
 	int packet_socket;
 	//get list of interfaces (actually addresses)
