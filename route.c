@@ -89,10 +89,14 @@ int main(){
 		if(tmp->ifa_addr->sa_family==AF_PACKET) {
 
 			struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
+			
 
+			printf("MAC: ");
 			for(int i = 0; i < 6; i++) {
 				mac_addr[i] = phy_if->sll_addr[i];
+				printf("%i:", mac_addr[i]);
 			}
+			printf("\n");
 
 			printf("Interface: %s\n",tmp->ifa_name);
 			if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)) {
@@ -102,11 +106,13 @@ int main(){
 		  			perror("socket");
 		  			return 2;
 				}
-			if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
-	  			perror("bind");
+				if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
+	  				perror("bind");
+				}
 			}
 		}
 	}
+
 	freeifaddrs(ifaddr);
 	printf("Ready to recieve now\n");
 
@@ -127,7 +133,8 @@ int main(){
 		int recvaddrlen=sizeof(struct sockaddr_ll);
 
 		int n = recvfrom(packet_socket, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);
-	if(recvaddr.sll_pkttype==PACKET_OUTGOING)
+		if(n==-1){perror("Why? ");}
+		if(recvaddr.sll_pkttype==PACKET_OUTGOING)
 			continue;
 		printf("Got a %d byte packet\n", n);
 		// Copy ethernet header data from buffer
@@ -136,37 +143,41 @@ int main(){
 
 		//Building the ethernet header response
 		memcpy(&responseEh.ether_dhost, &eh.ether_shost, 6);
-		memcpy(&responseEh.ether_shost, &eh.ether_dhost, 6);
+		memcpy(&responseEh.ether_shost, &mac_addr, 6);
 		responseEh.ether_type = htons(eh.ether_type);
-
+		
+		memcpy(&buf, &responseEh, 14);
+		
 		if (eh.ether_type == ETHERTYPE_ARP) {
 			int t_addr, s_addr;
 			//Copy ARP data
 			memcpy(&ah, &buf[14], 28);
-			printf("%i", ntohs(ah.oper));
+			//printf("%i", ntohs(ah.oper));
 			printf("Got ARP request \n");
 			// Copy ARP source and target addresses
 			//memcpy(&s_addr, &ah.spa, 4);
 			//memcpy(&t_addr, &ah.tpa, 4);
 
 			//Construct and send response
-			printf("Starting to copy values to response.");
-			responseAh.htype = htonl(ETHER_HW_TYPE);
-			responseAh.ptype = htonl(IP_PROTO_TYPE);
-			responseAh.hlen = htons(ETH_HW_ADDR_LEN);
-			responseAh.plen = htons(IP_ADDR_LEN);
-			responseAh.oper = htonl(OP_ARP_REPLY);
+			printf("Starting to copy values to response.\n");
+			responseAh.htype = htons(ETHER_HW_TYPE);
+			responseAh.ptype = htons(IP_PROTO_TYPE);
+			responseAh.hlen = ETH_HW_ADDR_LEN;
+			responseAh.plen = IP_ADDR_LEN;
+			responseAh.oper = htons(OP_ARP_REPLY);
 
-			printf("Switching source and destination.");
+			printf("Switching source and destination.\n");
 			memcpy(&responseAh.sha, &mac_addr, 6);
 			memcpy(&responseAh.spa, &ah.tpa, 4);
 			memcpy(&responseAh.tha, &ah.sha, 6);
 			memcpy(&responseAh.tpa, &ah.spa, 4);
 			
 			//copy to buffer
+			printf("copying to buffer\n");
 			memcpy(&buf[14], &responseAh, 28);
 
-			send(packet_socket, buf, strlen(buf)+1, 0);
+			printf("sending plz\n");
+			printf("%i\n",send(packet_socket, buf, n, 0));
 
 		}
 		else if (eh.ether_type == ETHERTYPE_IP) {
@@ -206,11 +217,10 @@ int main(){
 				//copy to buffer
 				memcpy(&buf[24], &responseIch, 4);
 
-				send(packet_socket, buf, strlen(buf)+1, 0);
+				send(packet_socket, buf, n, 0);
 				
 			}
 		}
-    }
 
     return 0;
 
