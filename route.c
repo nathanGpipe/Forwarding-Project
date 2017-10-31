@@ -1,4 +1,3 @@
-
 #include <sys/socket.h>
 #include <netpacket/packet.h>
 #include <net/ethernet.h>
@@ -144,24 +143,26 @@ int main(){
 			int t_addr, s_addr;
 			//Copy ARP data
 			memcpy(&ah, &buf[14], 28);
+			printf("%i", ntohs(ah.oper));
 			printf("Got ARP request \n");
 			// Copy ARP source and target addresses
-			memcpy(&s_addr, ah.spa, 4);
-			memcpy(&t_addr, ah.tpa, 4);
+			//memcpy(&s_addr, &ah.spa, 4);
+			//memcpy(&t_addr, &ah.tpa, 4);
 
 			//Construct and send response
+			printf("Starting to copy values to response.");
 			responseAh.htype = htonl(ETHER_HW_TYPE);
 			responseAh.ptype = htonl(IP_PROTO_TYPE);
 			responseAh.hlen = htons(ETH_HW_ADDR_LEN);
 			responseAh.plen = htons(IP_ADDR_LEN);
 			responseAh.oper = htonl(OP_ARP_REPLY);
 
+			printf("Switching source and destination.");
 			memcpy(&responseAh.sha, &mac_addr, 6);
 			memcpy(&responseAh.spa, &ah.tpa, 4);
 			memcpy(&responseAh.tha, &ah.sha, 6);
 			memcpy(&responseAh.tpa, &ah.spa, 4);
 			
-
 			//copy to buffer
 			memcpy(&buf[14], &responseAh, 28);
 
@@ -172,7 +173,7 @@ int main(){
 			int t_ip;
 			unsigned int checksum_data[20];
 			memcpy(&iph, &buf[14], 20);
-			memcpy(&t_ip, iph.dst_addr, 4);
+			//memcpy(&t_ip, &iph.dst_addr, 4);
 
 
 			memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
@@ -214,4 +215,3 @@ int main(){
     return 0;
 
 }
-
