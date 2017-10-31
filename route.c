@@ -111,8 +111,8 @@ int main(){
     eh.ether_type = ntohs(eh.ether_type);
 
 	//Building the ethernet header response
-	responseEh.ether_dhost = eh.ether_shost;
-	responseEh.ether_shost = eh.ether_dhost; 
+	memcpy(&responseEh.ether_dhost, &eh.ether_shost, 6);
+	memcpy(&responseEh.ether_shost, &eh.ether_dhost, 6); 
 	responseEh.ether_type = htons(eh.ether_type);
 
 	if (eh.ether_type == ETHERTYPE_ARP) {
@@ -131,10 +131,10 @@ int main(){
 		responseAh.plen = htons(IP_ADDR_LEN);
 		responseAh.oper = htonl(OP_ARP_REPLY);
 
-		//responseAh.sha = ah.tha;
-		responseAh.spa = ah.tpa;
-		responseAh.tha = ah.sha;
-		responseAh.tpa = ah.spa;
+		//memcpy(&responseAh.sha, &ah.tha, 6);
+		memcpy(&responseAh.spa, &ah.tpa, 4);
+		memcpy(&responseAh.tha, &ah.sha, 6);
+		memcpy(&responseAh.tpa, &ah.spa, 4);
 
 		memcpy(&buf[14], &responseAh, 28);
 	
@@ -144,11 +144,20 @@ int main(){
 		memcpy(&iph, &buf[14], 20);
 		memcpy(&t_ip, iph.dst_addr, 4);
 		
-		//TODO: Construct and send response
-		responseIph.ihl_ver = iph.ihl_ver;
-
+		
+		memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
+		responseIph.dif_services = iph.dif_services;
+		responseIph.len = iph.len;
+		responseIph.id = iph.id;
+		responseIph.flg_offst = iph.flg_offst;
+		responseIph.ttl = iph.ttl;//change later
+		responseIph.protocol = iph.protocol;
+		memcpy(&responseIph.src_addr, &iph.dst_addr, 4);
+		memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
+		//checksum
+		
 
 		}
-  }
-  return 0;
+	}
+	return 0;
 }
