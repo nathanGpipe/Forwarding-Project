@@ -31,6 +31,10 @@ struct arpheader {
 
 struct ipheader {
 	unsigned char ihl_ver[8];
+	unsigned short dif_services;
+	unsigned short len;
+	unsigned short id;
+	unsigned short flg_offst;
   	unsigned char ttl;
   	unsigned char protocol;
   	unsigned short checksum;
@@ -93,6 +97,7 @@ int main(){
 
 	struct arpheader responseAh;
 	struct ether_header responseEh;
+	struct ipheader responseIph;
 
     struct sockaddr_ll recvaddr;
     int recvaddrlen=sizeof(struct sockaddr_ll);
@@ -108,7 +113,7 @@ int main(){
 	//Building the ethernet header response
 	responseEh.ether_dhost = eh.ether_shost;
 	responseEh.ether_shost = eh.ether_dhost; 
-	responseEh.ether_type = eh.ether_type;
+	responseEh.ether_type = htons(eh.ether_type);
 
 	if (eh.ether_type == ETHERTYPE_ARP) {
 		int t_addr, s_addr;
@@ -140,6 +145,9 @@ int main(){
 		memcpy(&t_ip, iph.dst_addr, 4);
 		
 		//TODO: Construct and send response
+		responseIph.ihl_ver = iph.ihl_ver;
+
+
 		}
   }
   return 0;
