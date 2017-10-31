@@ -13,7 +13,9 @@
 #define ARP_FRAME_TYPE  0x0806
 #define ETHER_HW_TYPE   1
 #define IP_PROTO_TYPE   0x0800
-#define OP_ARP_REQUEST  2
+#define OP_ARP_REQUEST  1
+#define OP_ARP_REPLY 	2
+
 
 struct arpheader {
     unsigned short int htype;  /* Hardware Type           */ 
@@ -61,7 +63,7 @@ int main(){
   for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
 
 	if(tmp->ifa_addr->sa_family==AF_INET) {
-		// TODO: Create list of IPs?
+		// TODO: Create list of IPs? - not now
 	}
 
 	if(tmp->ifa_addr->sa_family==AF_PACKET) {
@@ -89,6 +91,9 @@ int main(){
 	struct ipheader iph;
 	struct arpheader ah;
 
+	struct arpheader responseAh;
+	struct ether_header responseEh;
+
     struct sockaddr_ll recvaddr;
     int recvaddrlen=sizeof(struct sockaddr_ll);
 
@@ -100,6 +105,11 @@ int main(){
     memcpy(&eh, &buf, 14);
     eh.ether_type = ntohs(eh.ether_type);
 
+	//Building the ethernet header response
+	responseEh.ether_dhost = eh.ether_shost;
+	responseEh.ether_shost = eh.ether_dhost; 
+	responseEh.ether_type = eh.ether_type;
+
 	if (eh.ether_type == ETHERTYPE_ARP) {
 		int t_addr, s_addr;
 		//Copy ARP data
@@ -109,7 +119,20 @@ int main(){
 		memcpy(&s_addr, ah.spa, 4);
 		memcpy(&t_addr, ah.tpa, 4);
 
-		//TODO: Construct and send response
+		//Construct and send response
+		responseAh.htype = htonl(ETHER_HW_TYPE);
+		responseAh.ptype = htonl(IP_PROTO_TYPE);
+		responseAh.hlen = htons(ETH_HW_ADDR_LEN);
+		responseAh.plen = htons(IP_ADDR_LEN);
+		responseAh.oper = htonl(OP_ARP_REPLY);
+
+		//responseAh.sha = ah.tha;
+		responseAh.spa = ah.tpa;
+		responseAh.tha = ah.sha;
+		responseAh.tpa = ah.spa;
+
+		memcpy(&buf[14], &responseAh, 28);
+	
 		}
 	else if (eh.ether_type == ETHERTYPE_IP) {
 		int t_ip;
