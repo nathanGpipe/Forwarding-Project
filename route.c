@@ -42,6 +42,12 @@ struct ipheader {
   	unsigned char dst_addr[4];
 };
 
+struct icmpheader {
+	unsigned char type;
+	unsigned char code;
+	unsigned short checksum;
+}
+
 struct ip_addr{
   char inf_name[8];
   int ip;
@@ -53,9 +59,18 @@ struct mac_addr{
   struct sockaddr_ll* socket;
 };
 
+unsigned int checksum (unsigned int *data, size_t size) {
+    unsigned int check = 0;
+    while (size-- != 0) {
+        check -= *data++;
+	}
+    return check;
+}
+
 int main(){
 
   int packet_socket;
+  unsigned char mac_addr[6];
   //get list of interfaces (actually addresses)
   struct ifaddrs *ifaddr, *tmp;
 
@@ -69,8 +84,15 @@ int main(){
 	if(tmp->ifa_addr->sa_family==AF_INET) {
 		// TODO: Create list of IPs? - not now
 	}
-
+	
+	
 	if(tmp->ifa_addr->sa_family==AF_PACKET) {
+
+		struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
+		for(int i = 0; i < 6; i++) {
+			mac_addr[i] = *phy_if->sll_addr[i];
+		}
+
 		printf("Interface: %s\n",tmp->ifa_name);
 		if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)){
 	  		printf("Creating Socket on interface %s\n",tmp->ifa_name);
@@ -94,10 +116,12 @@ int main(){
 	struct ether_header eh;
 	struct ipheader iph;
 	struct arpheader ah;
+	struct icmpheader ich;
 
 	struct arpheader responseAh;
 	struct ether_header responseEh;
 	struct ipheader responseIph;
+	struct icmpheader responseIch;
 
     struct sockaddr_ll recvaddr;
     int recvaddrlen=sizeof(struct sockaddr_ll);
@@ -131,16 +155,17 @@ int main(){
 		responseAh.plen = htons(IP_ADDR_LEN);
 		responseAh.oper = htonl(OP_ARP_REPLY);
 
-		//memcpy(&responseAh.sha, &ah.tha, 6);
+		memcpy(&responseAh.sha, &mac_addr, 6);
 		memcpy(&responseAh.spa, &ah.tpa, 4);
 		memcpy(&responseAh.tha, &ah.sha, 6);
 		memcpy(&responseAh.tpa, &ah.spa, 4);
 
 		memcpy(&buf[14], &responseAh, 28);
 	
-		}
+	}
 	else if (eh.ether_type == ETHERTYPE_IP) {
 		int t_ip;
+		unsigned int checksum_data[20];
 		memcpy(&iph, &buf[14], 20);
 		memcpy(&t_ip, iph.dst_addr, 4);
 		
@@ -152,12 +177,27 @@ int main(){
 		responseIph.flg_offst = iph.flg_offst;
 		responseIph.ttl = iph.ttl;//change later
 		responseIph.protocol = iph.protocol;
+		responseIph.checksum = 0;//byte 10
 		memcpy(&responseIph.src_addr, &iph.dst_addr, 4);
 		memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
-		//checksum
 		
-
+		memcpy(&checksum_data, &responseIph, 20);
+		responseIph.checksum = checksum(checksum_data, 20);
+			
 		}
+		
+		
+		if(iph.protocol == 1) { //icmp packet
+			memcpy(&ich, &buf[24], 4);
+			unsigned int checksum_data[2];
+			
+			responseIch.type = 0;
+			responseIch.code = ich.code;
+			memcpy(&checksum_data, &responseIch, 2);
+			responseIch.checksum = checksum(checksum_data, 2);
+			
+		}
+	}
 	}
 	return 0;
 }
