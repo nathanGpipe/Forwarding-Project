@@ -159,25 +159,25 @@ int main(){
 			//memcpy(&t_addr, &ah.tpa, 4);
 
 			//Construct and send response
-			printf("Starting to copy values to response.\n");
+			//printf("Starting to copy values to response.\n");
 			responseAh.htype = htons(ETHER_HW_TYPE);
 			responseAh.ptype = htons(IP_PROTO_TYPE);
 			responseAh.hlen = ETH_HW_ADDR_LEN;
 			responseAh.plen = IP_ADDR_LEN;
 			responseAh.oper = htons(OP_ARP_REPLY);
 
-			printf("Switching source and destination.\n");
+			//printf("Switching source and destination.\n");
 			memcpy(&responseAh.sha, &mac_addr, 6);
 			memcpy(&responseAh.spa, &ah.tpa, 4);
 			memcpy(&responseAh.tha, &ah.sha, 6);
 			memcpy(&responseAh.tpa, &ah.spa, 4);
 			
 			//copy to buffer
-			printf("copying to buffer\n");
+			//printf("copying to buffer\n");
 			memcpy(&buf[14], &responseAh, 28);
 
-			printf("sending plz\n");
-			printf("%i\n",send(packet_socket, buf, n, 0));
+			//printf("sending plz\n");
+			printf("ARP, %i\n",send(packet_socket, buf, n, 0));
 
 		}
 		else if (eh.ether_type == ETHERTYPE_IP) {
@@ -189,9 +189,9 @@ int main(){
 
 			memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
 			responseIph.dif_services = iph.dif_services;
-			responseIph.len = iph.len;
-			responseIph.id = iph.id;
-			responseIph.flg_offst = iph.flg_offst;
+			responseIph.len = htons(iph.len);
+			responseIph.id = htons(iph.id);
+			responseIph.flg_offst = htons(iph.flg_offst);
 			responseIph.ttl = iph.ttl;//change later
 			responseIph.protocol = iph.protocol;
 			responseIph.checksum = 0;//byte 10
@@ -199,7 +199,7 @@ int main(){
 			memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
 
 			memcpy(&checksum_data, &responseIph, 20);
-			responseIph.checksum = checksum(checksum_data, 20);
+			responseIph.checksum = htons(checksum(checksum_data, 20));
 			
 			
 			}
@@ -212,7 +212,7 @@ int main(){
 				responseIch.type = 0;
 				responseIch.code = ich.code;
 				memcpy(&checksum_data, &responseIch, 2);
-				responseIch.checksum = checksum(checksum_data, 2);
+				responseIch.checksum = htons(checksum(checksum_data, 2));
 				
 				//copy to buffer
 				memcpy(&buf[24], &responseIch, 4);
