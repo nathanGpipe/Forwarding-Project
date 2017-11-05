@@ -71,4 +71,3 @@ def prj4Net():
 if __name__ == '__main__':
     setLogLevel( 'info' )
     prj4Net()
-
