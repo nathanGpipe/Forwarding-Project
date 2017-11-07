@@ -144,7 +144,8 @@ void* interface_code(void* intr) {
 			//Copy ARP data
 			memcpy(&ah, &buf[14], 28);
 			//printf("%i", ntohs(ah.oper));
-			if(ah.tpa
+			
+			//if(ah.tpa
 			printf("Got ARP request \n");
 			// Copy ARP source and target addresses
 			//memcpy(&s_addr, &ah.spa, 4);
@@ -227,7 +228,7 @@ int main(int argc, char** argv){
 	//void* params[2];
 
 	//read routing table
-	/*FILE* fp = fopen(argv[1], "r");
+	FILE* fp = fopen(argv[1], "r");
 	struct table_entry ip_table[6];
 	char line_string[50];
 	char* line = NULL;
@@ -236,19 +237,18 @@ int main(int argc, char** argv){
 	size_t read;
 	int i = 0;
 	while((read = getline(&line, &len, fp)) != -1) {
-		strcpy(line_string, line);
-        	line_string[read] = '\0';
-        	strcpy(ip_table[i].prefix, strtok(line_string, " "));
-        	strcpy(ip_table[i].nexthop, strtok(NULL, " "));
-        	strcpy(ip_table[i].interface, strtok(NULL, "\n"));
-        	printf("%s\n",ip_table[i].interface);
+		//strcpy(line_string, line);
+        line_string[read] = '\0';
+        strcpy(ip_table[i].prefix, strtok(line, " "));
+        strcpy(ip_table[i].nexthop, strtok(NULL, " "));
+        strcpy(ip_table[i].interface, strtok(NULL, "\n"));
+        printf("%s %s %s\n",ip_table[i].prefix, ip_table[i].nexthop, ip_table[i].interface);
 		i++;
 	}
+	
+	free(line);
 	fclose(fp);
-	if(line) {
-		free(line);
-	}*/
-
+	
 	if(getifaddrs(&ifaddr)==-1){
 		perror("getifaddrs");
 		return 1;
