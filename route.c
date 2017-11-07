@@ -33,7 +33,7 @@ struct arpheader {
 
 struct ipheader {
 	unsigned char ihl_ver[8];
-	unsigned short dif_services;
+	unsigned char dif_services;//short?
 	unsigned short len;
 	unsigned short id;
 	unsigned short flg_offst;
@@ -85,27 +85,26 @@ void* interface_code(void* intr) {
 
 	printf("Ready to recieve on %s now\n", tmp->ifa_name);
 
-		struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
+	struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
 
 
-		printf("MAC: ");
-		for(int i = 0; i < 6; i++) {
-			mac_addr[i] = phy_if->sll_addr[i];
-			printf("%i:", mac_addr[i]);
-		}
-		printf("\n");
-
-		printf("Interface: %s\n",tmp->ifa_name);
-		
-	  	printf("Creating Socket on interface %s\n",tmp->ifa_name);
-		packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-		if(packet_socket<0){
-	  		perror("socket");
-	  		return (void*)2;
-		}
-		if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
-			perror("bind");
-		}
+	printf("MAC: ");
+	for(int i = 0; i < 6; i++) {
+		mac_addr[i] = phy_if->sll_addr[i];
+		printf("%i:", mac_addr[i]);
+	}
+	printf("\n");
+	printf("Interface: %s\n",tmp->ifa_name);
+	
+  	printf("Creating Socket on interface %s\n",tmp->ifa_name);
+	packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	if(packet_socket<0){
+  		perror("socket");
+  		return (void*)2;
+	}
+	if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
+		perror("bind");
+	}
 
 	while(1) {
 		char buf[1500];
@@ -140,12 +139,12 @@ void* interface_code(void* intr) {
 		memcpy(&buf, &responseEh, 14);
 
 		if (eh.ether_type == ETHERTYPE_ARP) {
-			//if arp is for us, else do nothing
 
 			int t_addr, s_addr;
 			//Copy ARP data
 			memcpy(&ah, &buf[14], 28);
 			//printf("%i", ntohs(ah.oper));
+			if(ah.tpa
 			printf("Got ARP request \n");
 			// Copy ARP source and target addresses
 			//memcpy(&s_addr, &ah.spa, 4);
@@ -225,8 +224,10 @@ int main(int argc, char** argv){
 	//get list of interfaces (actually addresses)
 	struct ifaddrs *ifaddr, *tmp;
 	
+	//void* params[2];
+
 	//read routing table
-	FILE* fp = fopen(argv[1], "r");
+	/*FILE* fp = fopen(argv[1], "r");
 	struct table_entry ip_table[6];
 	char line_string[50];
 	char* line = NULL;
@@ -236,17 +237,17 @@ int main(int argc, char** argv){
 	int i = 0;
 	while((read = getline(&line, &len, fp)) != -1) {
 		strcpy(line_string, line);
-        	string[read] = '\0';
+        	line_string[read] = '\0';
         	strcpy(ip_table[i].prefix, strtok(line_string, " "));
         	strcpy(ip_table[i].nexthop, strtok(NULL, " "));
         	strcpy(ip_table[i].interface, strtok(NULL, "\n"));
-        	printf("%s\n",table_ip[i].interface);
+        	printf("%s\n",ip_table[i].interface);
 		i++;
 	}
 	fclose(fp);
 	if(line) {
 		free(line);
-}
+	}*/
 
 	if(getifaddrs(&ifaddr)==-1){
 		perror("getifaddrs");
