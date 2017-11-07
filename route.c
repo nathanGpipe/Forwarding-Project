@@ -1,12 +1,14 @@
 #include <sys/socket.h>
 #include <netpacket/packet.h>
 #include <net/ethernet.h>
-#include <stdio.h>
-#include <errno.h>
-#include <sys/types.h>
 #include <ifaddrs.h>
 #include <netinet/ip.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <sys/types.h>
 #include <string.h>
+#include <pthread.h>
 
 #define ETH_HW_ADDR_LEN 6
 #define IP_ADDR_LEN     4
@@ -67,74 +69,46 @@ unsigned int checksum (unsigned int *data, size_t size) {
     return check;
 }
 
-int main(int argc, char** argv){
-
+//thread code
+void* interface_code(void* intr) {
+	
+	printf("started thread\n");
+	struct ifaddrs* tmp = (struct ifaddrs*)intr;
 	int packet_socket;
 	unsigned char mac_addr[6];
-	//get list of interfaces (actually addresses)
-	struct ifaddrs *ifaddr, *tmp;
-	
-	//read routing table
-	FILE* fp = fopen(argv[1], "r");
-	char* line = NULL;
-	char* rTable = "";
-	size_t len = 0;
-	size_t read;
-	if(line) {
-		free(line);
-	}
-	fclose(fp);
 
-	while((read = getline(&line, &len, fp)) != -1) {
-		//rTable = rTable + line + "\n"
-	}
+	printf("Ready to recieve on %s now\n", tmp->ifa_name);
 
-	
-	if(getifaddrs(&ifaddr)==-1){
-		perror("getifaddrs");
-		return 1;
-	}
-	//have the list, loop over the list
-	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-		
-		//create threads here for each interface
-			//includes the contents of this for loop, 
-			//and the infinite loop listening for packets
-		
-		if(tmp->ifa_addr->sa_family==AF_INET) {
+	if(tmp->ifa_addr->sa_family==AF_INET) {
 			// TODO: Create list of IPs? - not now
+    }
+
+
+	if(tmp->ifa_addr->sa_family==AF_PACKET) {
+
+		struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
+
+
+		printf("MAC: ");
+		for(int i = 0; i < 6; i++) {
+			mac_addr[i] = phy_if->sll_addr[i];
+			printf("%i:", mac_addr[i]);
 		}
+		printf("\n");
 
-
-		if(tmp->ifa_addr->sa_family==AF_PACKET) {
-
-			struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
-			
-
-			printf("MAC: ");
-			for(int i = 0; i < 6; i++) {
-				mac_addr[i] = phy_if->sll_addr[i];
-				printf("%i:", mac_addr[i]);
+		printf("Interface: %s\n",tmp->ifa_name);
+		if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)) {
+	  		printf("Creating Socket on interface %s\n",tmp->ifa_name);
+			packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+			if(packet_socket<0){
+	  			perror("socket");
+	  			return (void*)2;
 			}
-			printf("\n");
-
-			printf("Interface: %s\n",tmp->ifa_name);
-			if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)) {
-		  		printf("Creating Socket on interface %s\n",tmp->ifa_name);
-				packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-				if(packet_socket<0){
-		  			perror("socket");
-		  			return 2;
-				}
-				if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
-	  				perror("bind");
-				}
+			if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
+				perror("bind");
 			}
 		}
 	}
-
-	freeifaddrs(ifaddr);
-	printf("Ready to recieve now\n");
 
 	while(1) {
 		char buf[1500];
@@ -165,9 +139,9 @@ int main(int argc, char** argv){
 		memcpy(&responseEh.ether_dhost, &eh.ether_shost, 6);
 		memcpy(&responseEh.ether_shost, &mac_addr, 6);
 		responseEh.ether_type = htons(eh.ether_type);
-		
+
 		memcpy(&buf, &responseEh, 14);
-		
+
 		if (eh.ether_type == ETHERTYPE_ARP) {
 			//if arp is for us, else do nothing
 
@@ -193,7 +167,7 @@ int main(int argc, char** argv){
 			memcpy(&responseAh.spa, &ah.tpa, 4);
 			memcpy(&responseAh.tha, &ah.sha, 6);
 			memcpy(&responseAh.tpa, &ah.spa, 4);
-			
+
 			//copy to buffer
 			//printf("copying to buffer\n");
 			memcpy(&buf[14], &responseAh, 28);
@@ -224,31 +198,81 @@ int main(int argc, char** argv){
 
 			memcpy(&checksum_data, &responseIph, 20);
 			responseIph.checksum = htons(checksum(checksum_data, 20));
-			
+
 			//else look up ip in the routing table
 				//arp across that interface for the mac
 				//send across that interface
-			
+
 			}
 
 
-			if(iph.protocol == 1) { //icmp packet
-				memcpy(&ich, &buf[24], 4);
-				unsigned int checksum_data[2];
+        if(iph.protocol == 1) { //icmp packet
+            memcpy(&ich, &buf[24], 4);
+            unsigned int checksum_data[2];
 
-				responseIch.type = 0;
-				responseIch.code = ich.code;
-				memcpy(&checksum_data, &responseIch, 2);
-				responseIch.checksum = htons(checksum(checksum_data, 2));
-				
-				//copy to buffer
-				memcpy(&buf[24], &responseIch, 4);
+            responseIch.type = 0;
+            responseIch.code = ich.code;
+            memcpy(&checksum_data, &responseIch, 2);
+            responseIch.checksum = htons(checksum(checksum_data, 2));
 
-				send(packet_socket, buf, n, 0);
-				
-			}
+            //copy to buffer
+            memcpy(&buf[24], &responseIch, 4);
+
+            send(packet_socket, buf, n, 0);
+
+        }
+    }
+	return NULL;
+}
+
+char* next_hop() {
+	
+}
+
+int main(int argc, char** argv){
+	
+	
+	//get list of interfaces (actually addresses)
+	struct ifaddrs *ifaddr, *tmp;
+	
+	//read routing table
+	FILE* fp = fopen(argv[1], "r");
+	char* line = NULL;
+	char* rTable = "";
+	size_t len = 0;
+	size_t read;
+
+	while((read = getline(&line, &len, fp)) != -1) {
+		rTable = rTable + line + "\n"
+	}
+	fclose(fp);
+	if(line) {
+		free(line);
+	}
+
+	if(getifaddrs(&ifaddr)==-1){
+		perror("getifaddrs");
+		return 1;
+	}
+	//have the list, loop over the list
+	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
+
+		//create threads here for each interface
+			//includes the contents of this for loop,
+			//and the infinite loop listening for packets
+		printf("looping\n");
+		pthread_t inter;
+		if(pthread_create(&inter, NULL, interface_code, (void*)tmp)) {
+			printf("error creating thread\n");
 		}
+
+
+	}
+	
+
+	freeifaddrs(ifaddr);
 
     return 0;
 
 }
+
