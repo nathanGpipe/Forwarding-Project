@@ -52,8 +52,8 @@ struct icmpheader {
 
 struct table_entry {
 	char prefix[19];
-    	char nexthop[16];
-    	char interface[8];
+    char nexthop[16];
+    char interface[8];
 };
 
 struct ip_addr{
@@ -85,13 +85,6 @@ void* interface_code(void* intr) {
 
 	printf("Ready to recieve on %s now\n", tmp->ifa_name);
 
-	if(tmp->ifa_addr->sa_family==AF_INET) {
-			// TODO: Create list of IPs? - not now
-    }
-
-
-	if(tmp->ifa_addr->sa_family==AF_PACKET) {
-
 		struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
 
 
@@ -103,18 +96,16 @@ void* interface_code(void* intr) {
 		printf("\n");
 
 		printf("Interface: %s\n",tmp->ifa_name);
-		if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)) {
-	  		printf("Creating Socket on interface %s\n",tmp->ifa_name);
-			packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-			if(packet_socket<0){
-	  			perror("socket");
-	  			return (void*)2;
-			}
-			if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
-				perror("bind");
-			}
+		
+	  	printf("Creating Socket on interface %s\n",tmp->ifa_name);
+		packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+		if(packet_socket<0){
+	  		perror("socket");
+	  		return (void*)2;
 		}
-	}
+		if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
+			perror("bind");
+		}
 
 	while(1) {
 		char buf[1500];
@@ -131,7 +122,7 @@ void* interface_code(void* intr) {
 
 		struct sockaddr_ll recvaddr;
 		int recvaddrlen=sizeof(struct sockaddr_ll);
-
+		
 		int n = recvfrom(packet_socket, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);
 		if(n==-1){perror("Why? ");}
 		if(recvaddr.sll_pkttype==PACKET_OUTGOING)
@@ -209,30 +200,23 @@ void* interface_code(void* intr) {
 				//arp across that interface for the mac
 				//send across that interface
 
+			if(iph.protocol == 1) { //icmp packet
+				memcpy(&ich, &buf[24], 4);
+				unsigned int checksum_data[2];
+
+				responseIch.type = 0;
+				responseIch.code = ich.code;
+				memcpy(&checksum_data, &responseIch, 2);
+				responseIch.checksum = htons(checksum(checksum_data, 2));
+
+				//copy to buffer
+				memcpy(&buf[24], &responseIch, 4);
+
+				send(packet_socket, buf, n, 0);
 			}
-
-
-        if(iph.protocol == 1) { //icmp packet
-            memcpy(&ich, &buf[24], 4);
-            unsigned int checksum_data[2];
-
-            responseIch.type = 0;
-            responseIch.code = ich.code;
-            memcpy(&checksum_data, &responseIch, 2);
-            responseIch.checksum = htons(checksum(checksum_data, 2));
-
-            //copy to buffer
-            memcpy(&buf[24], &responseIch, 4);
-
-            send(packet_socket, buf, n, 0);
-
         }
     }
 	return NULL;
-}
-
-char* next_hop() {
-	
 }
 
 int main(int argc, char** argv){
@@ -262,27 +246,40 @@ int main(int argc, char** argv){
 	fclose(fp);
 	if(line) {
 		free(line);
-	}
+}
 
 	if(getifaddrs(&ifaddr)==-1){
 		perror("getifaddrs");
 		return 1;
 	}
 	//have the list, loop over the list
+
+	pthread_t inter;
 	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
 
-		//create threads here for each interface
-			//includes the contents of this for loop,
-			//and the infinite loop listening for packets
-		printf("looping\n");
-		pthread_t inter;
+		/*printf("looping\n");
 		if(pthread_create(&inter, NULL, interface_code, (void*)tmp)) {
 			printf("error creating thread\n");
+		}*/
+
+		if(tmp->ifa_addr->sa_family==AF_INET) {
+			// TODO: Create list of IPs? - not now
 		}
 
 
+		if(tmp->ifa_addr->sa_family==AF_PACKET) {
+
+			printf("Interface: %s\n",tmp->ifa_name);
+			if(strncmp(&(tmp->ifa_name[0]),"lo",2)) {
+		  		if(pthread_create(&inter, NULL, interface_code, (void*)tmp)) {
+					printf("error creating thread\n");
+				}
+			}
+		}
+
 	}
 	
+	pthread_join(inter, NULL);
 
 	freeifaddrs(ifaddr);
 
