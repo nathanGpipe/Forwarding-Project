@@ -32,7 +32,7 @@ struct arpheader {
 };
 
 struct ipheader {
-	unsigned char ihl_ver[8];
+	unsigned char ihl_ver;
 	unsigned char dif_services;//short?
 	unsigned short len;
 	unsigned short id;
@@ -67,11 +67,18 @@ struct mac_addr{
   struct sockaddr_ll* socket;
 };
 
-unsigned int checksum (unsigned int *data, size_t size) {
-    unsigned int check = 0;
+struct inter_list{
+	char* name;
+	unsigned char ip[4];
+	unsigned char mac[6];
+};
+
+unsigned short checksum (unsigned short *data, size_t size) {
+    unsigned short check = 0;
     while (size-- != 0) {
-        check -= *data++;
+        check += *(data++);
 	}
+	//check ^ 0xFFFF //flips bits
     return check;
 }
 
@@ -81,7 +88,9 @@ void* interface_code(void* intr) {
 	printf("started thread\n");
 	struct ifaddrs* tmp = (struct ifaddrs*)intr;
 	int packet_socket;
+
 	unsigned char mac_addr[6];
+	unsigned char ip_addr[4];
 
 	printf("Ready to recieve on %s now\n", tmp->ifa_name);
 
@@ -145,7 +154,8 @@ void* interface_code(void* intr) {
 			memcpy(&ah, &buf[14], 28);
 			//printf("%i", ntohs(ah.oper));
 			
-			//if(ah.tpa
+			//if(ah.tpa 
+
 			printf("Got ARP request \n");
 			// Copy ARP source and target addresses
 			//memcpy(&s_addr, &ah.spa, 4);
@@ -201,7 +211,7 @@ void* interface_code(void* intr) {
 				//send across that interface
 
 			if(iph.protocol == 1) { //icmp packet
-				memcpy(&ich, &buf[24], 4);
+				memcpy(&ich, &buf[34], 4);
 				unsigned int checksum_data[2];
 
 				responseIch.type = 0;
@@ -210,7 +220,8 @@ void* interface_code(void* intr) {
 				responseIch.checksum = htons(checksum(checksum_data, 2));
 
 				//copy to buffer
-				memcpy(&buf[24], &responseIch, 4);
+				memcpy(&buf[14], &responseIph, 20);
+				memcpy(&buf[34], &responseIch, 4);
 
 				send(packet_socket, buf, n, 0);
 			}
@@ -219,14 +230,7 @@ void* interface_code(void* intr) {
 	return NULL;
 }
 
-int main(int argc, char** argv){
-	
-	
-	//get list of interfaces (actually addresses)
-	struct ifaddrs *ifaddr, *tmp;
-	
-	//void* params[2];
-
+char* next_hop(char* filename) {
 	//read routing table
 	FILE* fp = fopen(argv[1], "r");
 	struct table_entry ip_table[6];
@@ -248,21 +252,31 @@ int main(int argc, char** argv){
 	
 	free(line);
 	fclose(fp);
+
+	return NULL;
+}
+
+int main(int argc, char** argv){
+	
+	
+	//get list of interfaces (actually addresses)
+	struct ifaddrs *ifaddr, *tmp;
 	
 	if(getifaddrs(&ifaddr)==-1){
 		perror("getifaddrs");
 		return 1;
 	}
 	//have the list, loop over the list
-
-	pthread_t inter;
+	
+	
+	struct inter_list* list = (struct inter_list*)malloc(5*sizeof(struct inter_list));
+	int listsize = 5;
+	int i = 0;
 	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-
-		/*printf("looping\n");
-		if(pthread_create(&inter, NULL, interface_code, (void*)tmp)) {
-			printf("error creating thread\n");
-		}*/
-
+		if(i >= listsize) {
+			
+		}
+		
 		if(tmp->ifa_addr->sa_family==AF_INET) {
 			// TODO: Create list of IPs? - not now
 		}
@@ -272,14 +286,18 @@ int main(int argc, char** argv){
 
 			printf("Interface: %s\n",tmp->ifa_name);
 			if(strncmp(&(tmp->ifa_name[0]),"lo",2)) {
-		  		if(pthread_create(&inter, NULL, interface_code, (void*)tmp)) {
-					printf("error creating thread\n");
-				}
+		  		
 			}
 		}
-
+		i++;
 	}
 	
+	pthread_t inter;
+	//for(
+		if(pthread_create(&inter, NULL, interface_code, (void*)tmp)) {
+					printf("error creating thread\n");
+				}
+
 	pthread_join(inter, NULL);
 
 	freeifaddrs(ifaddr);
