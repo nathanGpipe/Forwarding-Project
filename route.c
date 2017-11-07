@@ -77,6 +77,8 @@ struct inter_list{
 	struct inter_list* next;
 };
 
+char* filename;
+
 unsigned char checksum (unsigned char *data, size_t size) {
     unsigned char check = 0;
     while (size-- != 0) {
@@ -88,12 +90,9 @@ unsigned char checksum (unsigned char *data, size_t size) {
 
 //thread code
 void* interface_code(void* intr) {
-	
+
 	printf("started thread\n");
 	struct inter_list* tmp = (struct inter_list*)intr;
-	
-	unsigned char mac_addr[6];
-	unsigned char* ip_addr;
 
 	printf("Ready to recieve on %s now\n", tmp->name);
 
@@ -114,17 +113,17 @@ void* interface_code(void* intr) {
 		int recvaddrlen=sizeof(struct sockaddr_ll);
 		
 		int n = recvfrom(tmp->packet_socket, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);
-		if(n==-1){perror("Why? ");}
+		if(n==-1){printf("%s: ", tmp->name); perror("Why? ");}
 		if(recvaddr.sll_pkttype==PACKET_OUTGOING)
 			continue;
-		printf("Got a %d byte packet\n", n);
+		printf("%s Got a %d byte packet\n", tmp->name, n);
 		// Copy ethernet header data from buffer
 		memcpy(&eh, &buf, 14);
 		eh.ether_type = ntohs(eh.ether_type);
 
 		//Building the ethernet header response
 		memcpy(&responseEh.ether_dhost, &eh.ether_shost, 6);
-		memcpy(&responseEh.ether_shost, &mac_addr, 6);
+		memcpy(&responseEh.ether_shost, &tmp->mac, 6);
 		responseEh.ether_type = htons(eh.ether_type);
 
 		memcpy(&buf, &responseEh, 14);
@@ -152,7 +151,7 @@ void* interface_code(void* intr) {
 			responseAh.oper = htons(OP_ARP_REPLY);
 
 			//printf("Switching source and destination.\n");
-			memcpy(&responseAh.sha, &mac_addr, 6);
+			memcpy(&responseAh.sha, &tmp->mac, 6);
 			memcpy(&responseAh.spa, &ah.tpa, 4);
 			memcpy(&responseAh.tha, &ah.sha, 6);
 			memcpy(&responseAh.tpa, &ah.spa, 4);
@@ -214,7 +213,7 @@ void* interface_code(void* intr) {
 	return NULL;
 }
 
-char* next_hop(char* filename) {
+char* next_hop() {
 	//read routing table
 	FILE* fp = fopen(filename, "r");
 	struct table_entry ip_table[6];
@@ -242,30 +241,34 @@ char* next_hop(char* filename) {
 
 int main(int argc, char** argv){
 	
+	filename = argv[1];
 	
 	//get list of interfaces (actually addresses)
 	struct ifaddrs *ifaddr, *tmp;
-	struct inter_list *list, *list_tmp;
+	struct inter_list *list, *list_tmp, *last;
 	
 	if(getifaddrs(&ifaddr)==-1){
 		perror("getifaddrs");
 		return 1;
 	}
 	
+	list = (struct inter_list*)malloc(sizeof(struct inter_list));
 	list_tmp = list;
 
 	//have the list, loop over the list
 	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-		printf("hi, %i\nAF_PACKET %i, AF_INET %i\n", tmp->ifa_addr->sa_family, AF_PACKET, AF_INET);
+		printf("hi, %s %i\nAF_PACKET %i, AF_INET %i\n", tmp->ifa_name, tmp->ifa_addr->sa_family, AF_PACKET, AF_INET);
 		int packet_socket;
 
 		if(tmp->ifa_addr->sa_family==AF_PACKET) {
-
+			printf("af_pack\n");
 			if(strncmp(&(tmp->ifa_name[0]),"lo",2)) {
 			//if its not loopback
-				//get mac address
+				//get name
 				printf("Interface: %s\n",tmp->ifa_name);
-
+				list_tmp->name = tmp->ifa_name;
+				
+				//get mac
 		  		struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
 				printf("MAC: ");
 				for(int i = 0; i < 6; i++) {
@@ -286,29 +289,42 @@ int main(int argc, char** argv){
 				}
 				
 				list_tmp->packet_socket = packet_socket;
-				list_tmp->name = tmp->ifa_name;
+				
+				//set next
+				printf("interfacelist\n");
+				struct inter_list *lt = (struct inter_list*)malloc(sizeof(struct inter_list));
+				printf("1\n");
+				list_tmp->next = lt;
+				printf("2\n");
+				last = list_tmp;
+				list_tmp = list_tmp->next;
+				printf("3\n");
+				list_tmp->next = NULL;
 			}
 		}
 
 		if(tmp->ifa_addr->sa_family==AF_INET) {
-			for(struct inter_list *lt = list; lt!=NULL; lt=lt->next) {
-				if(list_tmp->name==tmp->ifa_name) {
+			printf("af_inet\n");
+			struct inter_list* lt;
+			for(lt = list; lt!=NULL; lt=lt->next) {
+				printf("looping\n");
+				if(lt->name==tmp->ifa_name) {
 					printf("Interface: %s\n",tmp->ifa_name);
-					list_tmp->ip = inet_ntoa(((struct sockaddr_in*)tmp->ifa_addr)->sin_addr);
+					lt->ip = inet_ntoa(((struct sockaddr_in*)tmp->ifa_addr)->sin_addr);
 				}
 			}	
 		}
 		
-		struct inter_list *lt;
-		list_tmp->next = lt;
-		list_tmp = list_tmp->next;
 	}
-	list_tmp->next = NULL;
+	
+	free(list_tmp);
+	last->next = NULL;
+	list_tmp = last;
 	
 	//build threads
 	pthread_t inter;
 	for(list_tmp = list; list_tmp!=NULL; list_tmp=list_tmp->next) {
-		printf("thread");
+		printf("thread\n");
 		if(pthread_create(&inter, NULL, interface_code, (void*)list_tmp)) {
 			printf("error creating thread\n");
 		}
