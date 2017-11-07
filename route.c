@@ -50,6 +50,12 @@ struct icmpheader {
 	unsigned short checksum;
 };
 
+struct table_entry {
+	char prefix[19];
+    	char nexthop[16];
+    	char interface[8];
+};
+
 struct ip_addr{
   char inf_name[8];
   int ip;
@@ -237,13 +243,21 @@ int main(int argc, char** argv){
 	
 	//read routing table
 	FILE* fp = fopen(argv[1], "r");
+	struct table_entry ip_table[6];
+	char line_string[50];
 	char* line = NULL;
 	char* rTable = "";
 	size_t len = 0;
 	size_t read;
-
+	int i = 0;
 	while((read = getline(&line, &len, fp)) != -1) {
-		rTable = rTable + line + "\n"
+		strcpy(line_string, line);
+        	string[read] = '\0';
+        	strcpy(ip_table[i].prefix, strtok(line_string, " "));
+        	strcpy(ip_table[i].nexthop, strtok(NULL, " "));
+        	strcpy(ip_table[i].interface, strtok(NULL, "\n"));
+        	printf("%s\n",table_ip[i].interface);
+		i++;
 	}
 	fclose(fp);
 	if(line) {
