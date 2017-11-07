@@ -3,6 +3,8 @@
 #include <net/ethernet.h>
 #include <ifaddrs.h>
 #include <netinet/ip.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -69,12 +71,14 @@ struct mac_addr{
 
 struct inter_list{
 	char* name;
-	unsigned char ip[4];
+	unsigned char* ip;
 	unsigned char mac[6];
+	int packet_socket;
+	struct inter_list* next;
 };
 
-unsigned short checksum (unsigned short *data, size_t size) {
-    unsigned short check = 0;
+unsigned char checksum (unsigned char *data, size_t size) {
+    unsigned char check = 0;
     while (size-- != 0) {
         check += *(data++);
 	}
@@ -86,38 +90,16 @@ unsigned short checksum (unsigned short *data, size_t size) {
 void* interface_code(void* intr) {
 	
 	printf("started thread\n");
-	struct ifaddrs* tmp = (struct ifaddrs*)intr;
-	int packet_socket;
-
-	unsigned char mac_addr[6];
-	unsigned char ip_addr[4];
-
-	printf("Ready to recieve on %s now\n", tmp->ifa_name);
-
-	struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
-
-
-	printf("MAC: ");
-	for(int i = 0; i < 6; i++) {
-		mac_addr[i] = phy_if->sll_addr[i];
-		printf("%i:", mac_addr[i]);
-	}
-	printf("\n");
-	printf("Interface: %s\n",tmp->ifa_name);
+	struct inter_list* tmp = (struct inter_list*)intr;
 	
-  	printf("Creating Socket on interface %s\n",tmp->ifa_name);
-	packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-	if(packet_socket<0){
-  		perror("socket");
-  		return (void*)2;
-	}
-	if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
-		perror("bind");
-	}
+	unsigned char mac_addr[6];
+	unsigned char* ip_addr;
+
+	printf("Ready to recieve on %s now\n", tmp->name);
 
 	while(1) {
 		char buf[1500];
-
+		
 		struct ether_header eh;
 		struct ipheader iph;
 		struct arpheader ah;
@@ -131,7 +113,7 @@ void* interface_code(void* intr) {
 		struct sockaddr_ll recvaddr;
 		int recvaddrlen=sizeof(struct sockaddr_ll);
 		
-		int n = recvfrom(packet_socket, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);
+		int n = recvfrom(tmp->packet_socket, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);
 		if(n==-1){perror("Why? ");}
 		if(recvaddr.sll_pkttype==PACKET_OUTGOING)
 			continue;
@@ -180,14 +162,14 @@ void* interface_code(void* intr) {
 			memcpy(&buf[14], &responseAh, 28);
 
 			//printf("sending plz\n");
-			printf("ARP, %i\n",send(packet_socket, buf, n, 0));
+			printf("ARP, %i\n",send(tmp->packet_socket, buf, n, 0));
 
 		}
 		else if (eh.ether_type == ETHERTYPE_IP) {
 			//if we are the destination
 
 			int t_ip;
-			unsigned int checksum_data[20];
+			unsigned char checksum_data[20];
 			memcpy(&iph, &buf[14], 20);
 			//memcpy(&t_ip, &iph.dst_addr, 4);
 
@@ -212,7 +194,7 @@ void* interface_code(void* intr) {
 
 			if(iph.protocol == 1) { //icmp packet
 				memcpy(&ich, &buf[34], 4);
-				unsigned int checksum_data[2];
+				unsigned char checksum_data[2];
 
 				responseIch.type = 0;
 				responseIch.code = ich.code;
@@ -220,10 +202,12 @@ void* interface_code(void* intr) {
 				responseIch.checksum = htons(checksum(checksum_data, 2));
 
 				//copy to buffer
+				//ip
 				memcpy(&buf[14], &responseIph, 20);
+				//icmp
 				memcpy(&buf[34], &responseIch, 4);
 
-				send(packet_socket, buf, n, 0);
+				send(tmp->packet_socket, buf, n, 0);
 			}
         }
     }
@@ -232,7 +216,7 @@ void* interface_code(void* intr) {
 
 char* next_hop(char* filename) {
 	//read routing table
-	FILE* fp = fopen(argv[1], "r");
+	FILE* fp = fopen(filename, "r");
 	struct table_entry ip_table[6];
 	char line_string[50];
 	char* line = NULL;
@@ -261,42 +245,72 @@ int main(int argc, char** argv){
 	
 	//get list of interfaces (actually addresses)
 	struct ifaddrs *ifaddr, *tmp;
+	struct inter_list *list, *list_tmp;
 	
 	if(getifaddrs(&ifaddr)==-1){
 		perror("getifaddrs");
 		return 1;
 	}
-	//have the list, loop over the list
-	
-	
-	struct inter_list* list = (struct inter_list*)malloc(5*sizeof(struct inter_list));
-	int listsize = 5;
-	int i = 0;
-	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-		if(i >= listsize) {
-			
-		}
-		
-		if(tmp->ifa_addr->sa_family==AF_INET) {
-			// TODO: Create list of IPs? - not now
-		}
 
+	//have the list, loop over the list
+	list_tmp = list;
+	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
+		printf("hi, %i\nAF_PACKET %i\n", tmp->ifa_addr->sa_family, AF_PACKET);
+		int packet_socket;
 
 		if(tmp->ifa_addr->sa_family==AF_PACKET) {
 
-			printf("Interface: %s\n",tmp->ifa_name);
 			if(strncmp(&(tmp->ifa_name[0]),"lo",2)) {
-		  		
+			//if its not loopback
+				//get mac address
+				printf("Interface: %s\n",tmp->ifa_name);
+
+		  		struct sockaddr_ll* phy_if = (struct sockaddr_ll*)tmp->ifa_addr;
+				printf("MAC: ");
+				for(int i = 0; i < 6; i++) {
+					list_tmp->mac[i] = phy_if->sll_addr[i];
+					printf("%i:", list_tmp->mac[i]);
+				}
+				printf("\n");
+				
+				//make a socket
+				printf("Creating Socket on interface %s\n",tmp->ifa_name);
+				packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+				if(packet_socket<0){
+			  		perror("socket");
+ 			 		return 2;
+				}
+				if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1) {
+					perror("bind");
+				}
+				
+				list_tmp->packet_socket = packet_socket;
+				list_tmp->name = tmp->ifa_name;
 			}
 		}
-		i++;
+
+		if(tmp->ifa_addr->sa_family==AF_INET) {
+			for(struct inter_list *lt = list; lt!=NULL; lt=lt->next) {
+				if(list_tmp->name==tmp->ifa_name) {
+					printf("Interface: %s\n",tmp->ifa_name);
+					list_tmp->ip = inet_ntoa(((struct sockaddr_in*)tmp->ifa_addr)->sin_addr);
+				}
+			}	
+		}
+		
+		struct inter_list *lt;
+		list_tmp->next = lt;
+		list_tmp = list_tmp->next;
 	}
 	
+	//build threads
 	pthread_t inter;
-	//for(
-		if(pthread_create(&inter, NULL, interface_code, (void*)tmp)) {
-					printf("error creating thread\n");
-				}
+	for(list_tmp = list; list_tmp!=NULL; list_tmp=list_tmp->next) {
+		printf("thread");
+		if(pthread_create(&inter, NULL, interface_code, (void*)list_tmp)) {
+			printf("error creating thread\n");
+		}
+	}
 
 	pthread_join(inter, NULL);
 
