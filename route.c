@@ -79,13 +79,35 @@ struct inter_list{
 
 char* filename;
 
-unsigned char checksum (unsigned char *data, size_t size) {
-    unsigned char check = 0;
+unsigned short checksum (unsigned short *data, int size) {	
+	long sum = 0;
+
+	while(size > 1){
+		sum += *data++;
+		if(sum & 0x80000000)
+			sum = (sum & 0xFFFF) + (sum >> 16);
+		size -= 2;	
+	}
+
+	if(size)
+		sum += (unsigned short) *(unsigned char *)data;
+	
+	while(sum >> 16)
+		sum = (sum & 0xFFFF) + (sum >> 16);
+
+	//~sum returns the bitwise flipped version of sum
+	return ~sum;
+
+
+/*    unsigned short check = 0;
     while (size-- != 0) {
         check += *(data++);
 	}
 	//check ^ 0xFFFF //flips bits
     return check;
+*/
+
+
 }
 
 //thread code
@@ -185,7 +207,7 @@ void* interface_code(void* intr) {
 			memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
 
 			memcpy(&checksum_data, &responseIph, 20);
-			responseIph.checksum = htons(checksum(checksum_data, 20));
+			responseIph.checksum = checksum(checksum_data, 20);
 
 			//else look up ip in the routing table
 				//arp across that interface for the mac
@@ -198,7 +220,7 @@ void* interface_code(void* intr) {
 				responseIch.type = 0;
 				responseIch.code = ich.code;
 				memcpy(&checksum_data, &responseIch, 2);
-				responseIch.checksum = htons(checksum(checksum_data, 2));
+				responseIch.checksum = checksum(checksum_data, 2);
 
 				//copy to buffer
 				//ip
