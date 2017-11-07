@@ -251,11 +251,12 @@ int main(int argc, char** argv){
 		perror("getifaddrs");
 		return 1;
 	}
+	
+	list_tmp = list;
 
 	//have the list, loop over the list
-	list_tmp = list;
 	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-		printf("hi, %i\nAF_PACKET %i\n", tmp->ifa_addr->sa_family, AF_PACKET);
+		printf("hi, %i\nAF_PACKET %i, AF_INET %i\n", tmp->ifa_addr->sa_family, AF_PACKET, AF_INET);
 		int packet_socket;
 
 		if(tmp->ifa_addr->sa_family==AF_PACKET) {
@@ -302,6 +303,7 @@ int main(int argc, char** argv){
 		list_tmp->next = lt;
 		list_tmp = list_tmp->next;
 	}
+	list_tmp->next = NULL;
 	
 	//build threads
 	pthread_t inter;
