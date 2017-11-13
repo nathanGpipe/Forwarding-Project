@@ -50,6 +50,8 @@ struct icmpheader {
 	unsigned char type;
 	unsigned char code;
 	unsigned short checksum;
+	unsigned short id;
+	unsigned short sequence;
 };
 
 struct table_entry {
@@ -71,10 +73,12 @@ struct mac_addr{
 
 struct inter_list{
 	char* name;
-	unsigned char* ip;
+	unsigned char* ip_str;
+	int ip_int;
 	unsigned char mac[6];
 	int packet_socket;
 	struct inter_list* next;
+	struct inter_list* prev;
 };
 
 char* filename;
@@ -156,8 +160,6 @@ void* interface_code(void* intr) {
 			//Copy ARP data
 			memcpy(&ah, &buf[14], 28);
 			//printf("%i", ntohs(ah.oper));
-			
-			//if(ah.tpa 
 
 			printf("Got ARP request \n");
 			// Copy ARP source and target addresses
@@ -187,53 +189,66 @@ void* interface_code(void* intr) {
 
 		}
 		else if (eh.ether_type == ETHERTYPE_IP) {
-			//if we are the destination
+			
+			memcpy(&iph, &buf[14], 20);
 
 			int t_ip;
+			int our_ip = tmp->ip_int;
+			memcpy(&t_ip, &iph.dst_addr, 4);
+			t_ip = ntohl(t_ip);
+			printf("sent %d, ours %d\n", t_ip, our_ip); 
+						
 			unsigned char checksum_data[20];
-			memcpy(&iph, &buf[14], 20);
-			//memcpy(&t_ip, &iph.dst_addr, 4);
+			
 
+			//if(t_ip == our_ip) {
 
-			memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
-			responseIph.dif_services = iph.dif_services;
-			responseIph.len = htons(iph.len);
-			responseIph.id = htons(iph.id);
-			responseIph.flg_offst = htons(iph.flg_offst);
-			responseIph.ttl = iph.ttl;//change later
-			responseIph.protocol = iph.protocol;
-			responseIph.checksum = 0;//byte 10
-			memcpy(&responseIph.src_addr, &iph.dst_addr, 4);
-			memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
+				memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
+				responseIph.dif_services = iph.dif_services;
+				responseIph.len = iph.len;
+				responseIph.id = iph.id;
+				responseIph.flg_offst = iph.flg_offst;
+				responseIph.ttl = iph.ttl;//change later
+				responseIph.protocol = iph.protocol;
+				responseIph.checksum = 0;//byte 10
+				memcpy(&responseIph.src_addr, &iph.dst_addr, 4);
+				memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
 
-			memcpy(&checksum_data, &responseIph, 20);
-			responseIph.checksum = checksum(checksum_data, 20);
+				memcpy(&checksum_data, &responseIph, 20);
+				responseIph.checksum = checksum(checksum_data, 20);
+		
+				//else look up ip in the routing table
+					//arp across that interface for the mac
+					//send across that interface
 
-			//else look up ip in the routing table
-				//arp across that interface for the mac
-				//send across that interface
+				if(iph.protocol == 1) { //icmp packet
+					memcpy(&ich, &buf[34], 8);
+					unsigned char checksum_data[8];
 
-			if(iph.protocol == 1) { //icmp packet
-				memcpy(&ich, &buf[34], 4);
-				unsigned char checksum_data[2];
+					responseIch.type = 0;
+					responseIch.code = 0;
+					responseIch.checksum = 0;
+					responseIch.id = ich.id;
+					responseIch.sequence = ich.sequence;
+			
+					memcpy(&checksum_data, &responseIch, 8);
+					responseIch.checksum = checksum(checksum_data, 8);
 
-				responseIch.type = 0;
-				responseIch.code = ich.code;
-				memcpy(&checksum_data, &responseIch, 2);
-				responseIch.checksum = checksum(checksum_data, 2);
+					//copy to buffer
+					//ip
+					memcpy(&buf[14], &responseIph, 20);
+					//icmp
+					memcpy(&buf[34], &responseIch, 8);
 
-				//copy to buffer
-				//ip
-				memcpy(&buf[14], &responseIph, 20);
-				//icmp
-				memcpy(&buf[34], &responseIch, 4);
-
-				send(tmp->packet_socket, buf, n, 0);
-			}
+					send(tmp->packet_socket, buf, n, 0);
+				}
+			//}
         }
     }
 	return NULL;
 }
+
+//void time_exceeded(int socket, 
 
 char* next_hop() {
 	//read routing table
@@ -279,7 +294,7 @@ int main(int argc, char** argv){
 
 	//have the list, loop over the list
 	for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-		printf("hi, %s %i\nAF_PACKET %i, AF_INET %i\n", tmp->ifa_name, tmp->ifa_addr->sa_family, AF_PACKET, AF_INET);
+		printf("---- %s ----\n", tmp->ifa_name);
 		int packet_socket;
 
 		if(tmp->ifa_addr->sa_family==AF_PACKET) {
@@ -313,14 +328,10 @@ int main(int argc, char** argv){
 				list_tmp->packet_socket = packet_socket;
 				
 				//set next
-				printf("interfacelist\n");
 				struct inter_list *lt = (struct inter_list*)malloc(sizeof(struct inter_list));
-				printf("1\n");
 				list_tmp->next = lt;
-				printf("2\n");
 				last = list_tmp;
 				list_tmp = list_tmp->next;
-				printf("3\n");
 				list_tmp->next = NULL;
 			}
 		}
@@ -329,10 +340,10 @@ int main(int argc, char** argv){
 			printf("af_inet\n");
 			struct inter_list* lt;
 			for(lt = list; lt!=NULL; lt=lt->next) {
-				printf("looping\n");
 				if(lt->name==tmp->ifa_name) {
 					printf("Interface: %s\n",tmp->ifa_name);
-					lt->ip = inet_ntoa(((struct sockaddr_in*)tmp->ifa_addr)->sin_addr);
+					lt->ip_str = inet_ntoa(((struct sockaddr_in*)tmp->ifa_addr)->sin_addr);
+					lt->ip_int = ((struct sockaddr_in*)tmp->ifa_addr)->sin_addr.s_addr;
 				}
 			}	
 		}
@@ -346,7 +357,6 @@ int main(int argc, char** argv){
 	//build threads
 	pthread_t inter;
 	for(list_tmp = list; list_tmp!=NULL; list_tmp=list_tmp->next) {
-		printf("thread\n");
 		if(pthread_create(&inter, NULL, interface_code, (void*)list_tmp)) {
 			printf("error creating thread\n");
 		}
