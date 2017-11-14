@@ -284,26 +284,37 @@ void* interface_code(void* intr) {
 					//else look up ip in the routing table
 						//arp across that interface for the mac
 						//send across that interface
-					//response next_hop
+					/*char* ipstring;
+					int ipint
+					inet_ntop(AF_INET, t_ip, &ipstring ,INET_ADDRSTRLEN);
+					inet_pton(AF_INET, &(next_hop(ipstring), ipint, INET_ADDRSTRLEN));
 					
 					responseAh.htype = htons(ETHER_HW_TYPE);
 					responseAh.ptype = htons(IP_PROTO_TYPE);
 					responseAh.hlen = ETH_HW_ADDR_LEN;
 					responseAh.plen = IP_ADDR_LEN;
-					responseAh.oper = htons(OP_ARP_REPLY);
+					responseAh.oper = htons(OP_ARP_REQUEST);
 
 					//Swtich destination and source
 					memcpy(&responseAh.sha, &tmp->mac, 6);
-					memcpy(&responseAh.spa, &ah.tpa, 4);
-					memcpy(&responseAh.tha, &ah.sha, 6);
-					memcpy(&responseAh.tpa, &ah.spa, 4);
+					memcpy(&responseAh.spa, &tmp->ip, 4);
+					memcpy(&responseAh.tha, &(0x0), 6);
+					memcpy(&responseAh.tpa, &ipint, 4);
 
 					//copy to buffer
 					//printf("copying to buffer\n");
 					memcpy(&buf[14], &responseAh, 28);
 
-					//printf("sending plz\n");
-					printf("ARP, %i\n",send(tmp->packet_socket, buf, n, 0));
+					//correct ethernet header
+					memcpy(&responseEh.ether_dhost, &(0xFFFFFFFFFFFF), 6);
+					memcpy(&responseEh.ether_shost, &tmp->mac, 6);
+					responseEh.ether_type = htons(eh.ether_type);
+
+					memcpy(&buf, &responseEh, 14);
+
+					printf("ARP request, %i\n",send(tmp->packet_socket, buf, n, 0));
+
+					n = recvfrom(tmp->packet_socket, buf, 1500,0,(struct sockaddr*)&recvaddr, &recvaddrlen);*/
 
 				}
 			}
