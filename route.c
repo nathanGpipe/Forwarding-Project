@@ -202,60 +202,117 @@ void* interface_code(void* intr) {
 						
 			unsigned char checksum_data[20];
 			
-
-			if(t_ip == our_ip) {
-
+			//packet timed out
+			if(((short)iph.ttl) - 1 == 0) {
+				
 				memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
 				responseIph.dif_services = iph.dif_services;
 				responseIph.len = iph.len;
 				responseIph.id = iph.id;
 				responseIph.flg_offst = iph.flg_offst;
-				responseIph.ttl = iph.ttl;//change later
-				responseIph.protocol = iph.protocol;
+				responseIph.ttl = 64;
+				responseIph.protocol = 1;
 				responseIph.checksum = 0;//byte 10
 				memcpy(&responseIph.src_addr, &iph.dst_addr, 4);
 				memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
-
 				memcpy(&checksum_data, &responseIph, 20);
 				responseIph.checksum = checksum(checksum_data, 20);
+
+				unsigned char checksum_data[38];
+
+				responseIch.type = 11;
+				responseIch.code = 0;
+				responseIch.checksum = 0;
+				responseIch.id = 0;
+				responseIch.sequence = 0;
+
+				memcpy(&checksum_data, &responseIch, 8); //icmp header
+				memcpy(&checksum_data[8], &iph, 20); //received ip header
+				memcpy(&checksum_data[28], &buf[42], 8); //next 8 bytes of data
+				responseIch.checksum = checksum(checksum_data, 42);
+
+				//copy to buffer
+				//ip
+				memcpy(&buf[14], &responseIph, 20);
+				//icmp
+				memcpy(&buf[34], &responseIch, 8);
+
+				send(tmp->packet_socket, buf, 50, 0);
+			} else {
+				//packets ours
+				if(t_ip == our_ip) {
+
+					memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
+					responseIph.dif_services = iph.dif_services;
+					responseIph.len = iph.len;
+					responseIph.id = iph.id;
+					responseIph.flg_offst = iph.flg_offst;
+					responseIph.ttl = iph.ttl;//change later
+					responseIph.protocol = iph.protocol;
+					responseIph.checksum = 0;//byte 10
+					memcpy(&responseIph.src_addr, &iph.dst_addr, 4);
+					memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
+
+					memcpy(&checksum_data, &responseIph, 20);
+					responseIph.checksum = checksum(checksum_data, 20);
 		
 				
 
-				if(iph.protocol == 1) { //icmp packet
-					memcpy(&ich, &buf[34], 8);
-					unsigned char checksum_data[8];
+					if(iph.protocol == 1) { //icmp packet
+						memcpy(&ich, &buf[34], 8);
+						unsigned char checksum_data[8];
 
-					responseIch.type = 0;
-					responseIch.code = 0;
-					responseIch.checksum = 0;
-					responseIch.id = ich.id;
-					responseIch.sequence = ich.sequence;
-			
-					memcpy(&checksum_data, &responseIch, 8);
-					responseIch.checksum = checksum(checksum_data, 8);
+						responseIch.type = 0;
+						responseIch.code = 0;
+						responseIch.checksum = 0;
+						responseIch.id = ich.id;
+						responseIch.sequence = ich.sequence;
+
+						memcpy(&checksum_data, &responseIch, 8);
+						responseIch.checksum = checksum(checksum_data, 8);
+
+						//copy to buffer
+						//ip
+						memcpy(&buf[14], &responseIph, 20);
+						//icmp
+						memcpy(&buf[34], &responseIch, 8);
+
+						send(tmp->packet_socket, buf, n, 0);
+					}
+				//forward packet
+				} else {
+					//else look up ip in the routing table
+						//arp across that interface for the mac
+						//send across that interface
+					//response next_hop
+					
+					responseAh.htype = htons(ETHER_HW_TYPE);
+					responseAh.ptype = htons(IP_PROTO_TYPE);
+					responseAh.hlen = ETH_HW_ADDR_LEN;
+					responseAh.plen = IP_ADDR_LEN;
+					responseAh.oper = htons(OP_ARP_REPLY);
+
+					//Swtich destination and source
+					memcpy(&responseAh.sha, &tmp->mac, 6);
+					memcpy(&responseAh.spa, &ah.tpa, 4);
+					memcpy(&responseAh.tha, &ah.sha, 6);
+					memcpy(&responseAh.tpa, &ah.spa, 4);
 
 					//copy to buffer
-					//ip
-					memcpy(&buf[14], &responseIph, 20);
-					//icmp
-					memcpy(&buf[34], &responseIch, 8);
+					//printf("copying to buffer\n");
+					memcpy(&buf[14], &responseAh, 28);
 
-					send(tmp->packet_socket, buf, n, 0);
+					//printf("sending plz\n");
+					printf("ARP, %i\n",send(tmp->packet_socket, buf, n, 0));
+
 				}
-			} else {
-				//else look up ip in the routing table
-					//arp across that interface for the mac
-					//send across that interface
-
 			}
         }
     }
 	return NULL;
 }
 
-//void time_exceeded(int socket, 
-
-char* next_hop() {
+char* next_hop(char* target_ip) {
 	//read routing table
 	FILE* fp = fopen(filename, "r");
 	struct table_entry ip_table[6];
@@ -264,15 +321,35 @@ char* next_hop() {
 	char* rTable = "";
 	size_t len = 0;
 	size_t read;
+
 	int i = 0;
 	while((read = getline(&line, &len, fp)) != -1) {
-		//strcpy(line_string, line);
+		printf("%s\n", line);
+		strcpy(line_string, line);
+
         line_string[read] = '\0';
-        strcpy(ip_table[i].prefix, strtok(line, " "));
+		printf("1\n");
+        strcpy(ip_table[i].prefix, strtok(line_string, " "));
+		printf("2\n");
         strcpy(ip_table[i].nexthop, strtok(NULL, " "));
+		printf("3\n");
         strcpy(ip_table[i].interface, strtok(NULL, "\n"));
-        printf("%s %s %s\n",ip_table[i].prefix, ip_table[i].nexthop, ip_table[i].interface);
+		
+		printf("%s %s %s\n",ip_table[i].prefix, ip_table[i].nexthop, ip_table[i].interface);
+		
 		i++;
+	}
+
+	for(i = 0; i < 6; i++) {
+		int length;
+		char* prefix_len;
+		char* prefix_def;
+
+		printf("1\n");
+		prefix_def = strtok(ip_table[i].prefix, "/");
+		printf("2\n");
+		prefix_len = strtok(NULL, " ");
+		length = (atoi(prefix_len))/8;
 	}
 	
 	free(line);
