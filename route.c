@@ -323,6 +323,49 @@ void* interface_code(void* intr) {
 	return NULL;
 }
 
+//other than the ip and icmp portions of the buffer, assumes everything is
+//set up as needed before being called
+void icmp_error(char code, struct inter_list* tmp, struct ipheader iph, char* buf) {
+	unsigned char checksum_dataip[20];
+	struct ipheader responseIph;
+	struct icmpheader responseIch;
+	
+	memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
+	responseIph.dif_services = iph.dif_services;
+	responseIph.len = iph.len;
+	responseIph.id = iph.id;
+	responseIph.flg_offst = iph.flg_offst;
+	responseIph.ttl = 64;
+	responseIph.protocol = 1;
+	responseIph.checksum = 0;//byte 10
+	memcpy(&responseIph.src_addr, &iph.dst_addr, 4);
+	memcpy(&responseIph.dst_addr, &iph.src_addr, 4);
+	memcpy(&checksum_dataip, &responseIph, 20);
+	responseIph.checksum = checksum(checksum_dataip, 20);
+
+	unsigned char checksum_dataicmp[38];
+
+	responseIch.type = 11;
+	responseIch.code = code;
+	responseIch.checksum = 0;
+	responseIch.id = 0;
+	responseIch.sequence = 0;
+
+	memcpy(&checksum_dataicmp, &responseIch, 8); //icmp header
+	memcpy(&checksum_dataicmp[8], &iph, 20); //received ip header
+	memcpy(&checksum_dataicmp[28], &buf[42], 8); //next 8 bytes of data
+	responseIch.checksum = checksum(checksum_dataicmp, 42);
+
+	//copy to buffer
+	//ip
+	memcpy(&buf[14], &responseIph, 20);
+	//icmp
+	memcpy(&buf[34], &responseIch, 8);
+
+	send(tmp->packet_socket, buf, 50, 0);
+
+}
+
 char* next_hop(char* target_ip) {
 	//read routing table
 	FILE* fp = fopen(filename, "r");
