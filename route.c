@@ -73,13 +73,15 @@ struct mac_addr{
 
 struct inter_list{
 	char* name;
-	unsigned char* ip_str;
+	unsigned char ip_str[INET_ADDRSTRLEN];
 	int ip_int;
 	unsigned char mac[6];
 	int packet_socket;
 	struct inter_list* next;
-	struct inter_list* prev;
+	//struct inter_list* prev;
 };
+
+int* interfaces;
 
 char* filename;
 
@@ -156,36 +158,37 @@ void* interface_code(void* intr) {
 
 		if (eh.ether_type == ETHERTYPE_ARP) {
 
-			int t_addr, s_addr;
-			//Copy ARP data
 			memcpy(&ah, &buf[14], 28);
-			//printf("%i", ntohs(ah.oper));
 
-			printf("Got ARP request \n");
-			// Copy ARP source and target addresses
-			//memcpy(&s_addr, &ah.spa, 4);
-			//memcpy(&t_addr, &ah.tpa, 4);
+			int t_ip;
+			int our_ip = tmp->ip_int;
+			memcpy(&t_ip, &ah.tpa, 4);
+			printf("sent %d, ours %d\n", t_ip, our_ip); 
+			
+			if(t_ip == our_ip) {
+				printf("Got ARP request \n");
 
-			//Construct and send response
-			//printf("Starting to copy values to response.\n");
-			responseAh.htype = htons(ETHER_HW_TYPE);
-			responseAh.ptype = htons(IP_PROTO_TYPE);
-			responseAh.hlen = ETH_HW_ADDR_LEN;
-			responseAh.plen = IP_ADDR_LEN;
-			responseAh.oper = htons(OP_ARP_REPLY);
+				//Construct and send response
+				//printf("Starting to copy values to response.\n");
+				responseAh.htype = htons(ETHER_HW_TYPE);
+				responseAh.ptype = htons(IP_PROTO_TYPE);
+				responseAh.hlen = ETH_HW_ADDR_LEN;
+				responseAh.plen = IP_ADDR_LEN;
+				responseAh.oper = htons(OP_ARP_REPLY);
 
-			//printf("Switching source and destination.\n");
-			memcpy(&responseAh.sha, &tmp->mac, 6);
-			memcpy(&responseAh.spa, &ah.tpa, 4);
-			memcpy(&responseAh.tha, &ah.sha, 6);
-			memcpy(&responseAh.tpa, &ah.spa, 4);
+				//Swtich destination and source
+				memcpy(&responseAh.sha, &tmp->mac, 6);
+				memcpy(&responseAh.spa, &ah.tpa, 4);
+				memcpy(&responseAh.tha, &ah.sha, 6);
+				memcpy(&responseAh.tpa, &ah.spa, 4);
 
-			//copy to buffer
-			//printf("copying to buffer\n");
-			memcpy(&buf[14], &responseAh, 28);
+				//copy to buffer
+				//printf("copying to buffer\n");
+				memcpy(&buf[14], &responseAh, 28);
 
-			//printf("sending plz\n");
-			printf("ARP, %i\n",send(tmp->packet_socket, buf, n, 0));
+				//printf("sending plz\n");
+				printf("ARP, %i\n",send(tmp->packet_socket, buf, n, 0));
+			}
 
 		}
 		else if (eh.ether_type == ETHERTYPE_IP) {
@@ -195,13 +198,12 @@ void* interface_code(void* intr) {
 			int t_ip;
 			int our_ip = tmp->ip_int;
 			memcpy(&t_ip, &iph.dst_addr, 4);
-			t_ip = ntohl(t_ip);
 			printf("sent %d, ours %d\n", t_ip, our_ip); 
 						
 			unsigned char checksum_data[20];
 			
 
-			//if(t_ip == our_ip) {
+			if(t_ip == our_ip) {
 
 				memcpy(&responseIph.ihl_ver, &iph.ihl_ver, 8);
 				responseIph.dif_services = iph.dif_services;
@@ -217,9 +219,7 @@ void* interface_code(void* intr) {
 				memcpy(&checksum_data, &responseIph, 20);
 				responseIph.checksum = checksum(checksum_data, 20);
 		
-				//else look up ip in the routing table
-					//arp across that interface for the mac
-					//send across that interface
+				
 
 				if(iph.protocol == 1) { //icmp packet
 					memcpy(&ich, &buf[34], 8);
@@ -242,7 +242,12 @@ void* interface_code(void* intr) {
 
 					send(tmp->packet_socket, buf, n, 0);
 				}
-			//}
+			} else {
+				//else look up ip in the routing table
+					//arp across that interface for the mac
+					//send across that interface
+
+			}
         }
     }
 	return NULL;
@@ -340,10 +345,11 @@ int main(int argc, char** argv){
 			printf("af_inet\n");
 			struct inter_list* lt;
 			for(lt = list; lt!=NULL; lt=lt->next) {
-				if(lt->name==tmp->ifa_name) {
-					printf("Interface: %s\n",tmp->ifa_name);
-					lt->ip_str = inet_ntoa(((struct sockaddr_in*)tmp->ifa_addr)->sin_addr);
+				if(!strcmp(lt->name, tmp->ifa_name)) {
+					printf("Interface: %s",tmp->ifa_name);
+					inet_ntop(AF_INET, &((struct sockaddr_in*)tmp->ifa_addr)->sin_addr, lt->ip_str, INET_ADDRSTRLEN);
 					lt->ip_int = ((struct sockaddr_in*)tmp->ifa_addr)->sin_addr.s_addr;
+					printf(" -- str: %s, int: %d\n", lt->ip_str, lt->ip_int);
 				}
 			}	
 		}
